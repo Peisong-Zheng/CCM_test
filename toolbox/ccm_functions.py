@@ -8,61 +8,118 @@ from plotly.subplots import make_subplots
 
 from pyEDM import EmbedDimension
 
-def find_optimal_E_tau(df_sd, df_pre, maxE=5, maxTau=20):
-    """
-    Builds a combined DataFrame, performs EmbedDimension scans for E=1..maxE 
-    and tau=1..maxTau, plots a 3D surface of rho vs. E & tau,
-    and returns the best (E, tau) along with the RhoMatrix of shape (maxE, maxTau).
 
-    Parameters
-    ----------
-    df_sd   : pd.DataFrame
-        DataFrame containing at least columns ["age", X], where X is the second column.
-    df_pre  : pd.DataFrame
-        DataFrame containing at least columns ["age", Y], where Y is the second column.
-    maxE    : int
-        Maximum embedding dimension to explore.
-    maxTau  : int
-        Maximum lag (tau) to explore.
+# def find_optimal_E_tau(df_sd, df_pre, maxE=5, maxTau=-20):
 
-    Returns
-    -------
-    best_E : int
-        The E (1..maxE) that yields the highest rho
-    best_tau : int
-        The tau (1..maxTau) that yields the highest rho
-    RhoMatrix : np.ndarray
-        A 2D array of shape (maxE, maxTau) with rho values
-    """
+#     # Step 1: automatically figure out the column names (other than "age")
+#     column_name = df_sd.columns[1]    # second column in df_sd
+#     target_name = df_pre.columns[1]   # second column in df_pre
 
+#     # Step 2: create df_tmp automatically
+#     df_tmp = pd.DataFrame({
+#         "Time":       df_pre["age"],         # or df_sd["age"], if same length
+#         column_name:  df_sd[column_name],    # predictor
+#         target_name:  df_pre[target_name],   # target
+#     })
+
+#     # Example: leaving 10 points out of library if that was your intention
+#     lib_length = len(df_tmp) - 10
+#     lib_str  = f"1 {lib_length}"
+#     pred_str = f"1 {lib_length}"
+#     print(f"[INFO] Using lib={lib_str}, pred={pred_str}")
+
+#     # We'll store a 2D array for E=1..maxE, tau=1..maxTau
+#     RhoMatrix = np.zeros((maxE, abs(maxTau)))
+
+#     # For each tau in 1..maxTau, call EmbedDimension once with maxE, Tp=0
+#     for tau in range(-1, maxTau - 1):
+#         edm_out = EmbedDimension(
+#             dataFrame = df_tmp,
+#             columns   = column_name,  # predictor
+#             target    = target_name,  # target to predict
+#             maxE      = maxE,
+#             tau       = tau,
+#             Tp        = 0,
+#             lib       = lib_str,
+#             pred      = pred_str,
+#             showPlot  = False
+#         )
+
+#         # edm_out has columns [E, rho, MAE, RMSE, ...]
+#         for e_row in edm_out.itertuples():
+#             e_val = int(e_row.E)  # ensure integer index
+#             rho_val = e_row.rho
+#             # Fill the matrix for row=(E-1), col=(tau-1)
+#             RhoMatrix[e_val - 1, abs(tau) - 1] = rho_val
+
+#     # Build a 3D surface plot
+#     E_axis   = np.arange(1, maxE + 1)   # E = 1..maxE
+#     Tau_axis = np.arange(-1, maxTau - 1) # tau = 1..maxTau
+
+#     fig = go.Figure(data=[go.Surface(z=RhoMatrix, x=Tau_axis, y=E_axis)])
+#     fig.update_layout(
+#         title='Interactive 3D Surface: Rho vs. E and tau',
+#         scene=dict(
+#             xaxis_title='tau',
+#             yaxis_title='E',
+#             zaxis_title='rho',
+#         ),
+#         autosize=True,
+#     )
+#     fig.show()
+
+#     # Find the best (E, tau) by looking for the maximum rho in the entire matrix
+#     best_index = np.unravel_index(np.argmax(RhoMatrix), RhoMatrix.shape)
+#     best_E     = best_index[0] + 1  # +1 because index is zero-based
+#     best_tau   = best_index[1] + 1
+
+#     print(f"[INFO] Best E={best_E}, tau={best_tau} with rho={RhoMatrix[best_index]:.3f}")
+
+#     return best_E, best_tau, RhoMatrix
+
+
+
+
+
+import numpy as np
+import pandas as pd
+import plotly.graph_objs as go
+
+def find_optimal_E_tau(df_sd, df_pre, maxE=5, maxTau=-20):
     # Step 1: automatically figure out the column names (other than "age")
-    column_name = df_sd.columns[1]    # second column in df_sd
-    target_name = df_pre.columns[1]   # second column in df_pre
+    column_name = df_sd.columns[1]    # predictor in df_sd
+    target_name = df_pre.columns[1]   # target in df_pre
 
     # Step 2: create df_tmp automatically
     df_tmp = pd.DataFrame({
-        "Time":       df_pre["age"],         # or df_sd["age"], if same length
-        column_name:  df_sd[column_name],    # predictor
-        target_name:  df_pre[target_name],   # target
+        "Time":       df_pre["age"],         # or df_sd["age"] if same length
+        column_name:  df_sd[column_name],
+        target_name:  df_pre[target_name],
     })
 
-    # Example: leaving 10 points out of library if that was your intention
+    # Example: leaving 10 points out of the library
     lib_length = len(df_tmp) - 10
     lib_str  = f"1 {lib_length}"
     pred_str = f"1 {lib_length}"
     print(f"[INFO] Using lib={lib_str}, pred={pred_str}")
 
-    # We'll store a 2D array for E=1..maxE, tau=1..maxTau
-    RhoMatrix = np.zeros((maxE, maxTau))
+    # Prepare a 2D array for Rho: shape=(E=1..maxE, number_of_tau_values)
+    # If maxTau=-20, abs(maxTau)=20 columns
+    RhoMatrix = np.zeros((maxE, abs(maxTau)))
 
-    # For each tau in 1..maxTau, call EmbedDimension once with maxE, Tp=0
-    for tau in range(1, maxTau + 1):
+    # Create a list (or range) of tau values from -1 down to maxTau (inclusive)
+    # e.g., for maxTau=-20, this will be [-1, -2, -3, ..., -20]
+    tau_values = list(range(-1, maxTau - 1, -1))  # negative step of -1
+
+    # For each tau in tau_values, call your EDM routine
+    # We'll also enumerate so we know which column index to fill in RhoMatrix
+    for col_index, tau in enumerate(tau_values):
         edm_out = EmbedDimension(
             dataFrame = df_tmp,
             columns   = column_name,  # predictor
-            target    = target_name,  # target to predict
+            target    = target_name,  # target
             maxE      = maxE,
-            tau       = tau,
+            tau       = tau,          # now negative or -1, etc.
             Tp        = 0,
             lib       = lib_str,
             pred      = pred_str,
@@ -70,17 +127,25 @@ def find_optimal_E_tau(df_sd, df_pre, maxE=5, maxTau=20):
         )
 
         # edm_out has columns [E, rho, MAE, RMSE, ...]
+        # fill the matrix: row=(E-1), col=col_index
         for e_row in edm_out.itertuples():
-            e_val = int(e_row.E)  # ensure integer index
+            e_val  = int(e_row.E)  # E
             rho_val = e_row.rho
-            # Fill the matrix for row=(E-1), col=(tau-1)
-            RhoMatrix[e_val - 1, tau - 1] = rho_val
+            # Store in RhoMatrix (zero-based indexing => e_val-1)
+            RhoMatrix[e_val - 1, col_index] = rho_val
 
     # Build a 3D surface plot
-    E_axis   = np.arange(1, maxE + 1)   # E = 1..maxE
-    Tau_axis = np.arange(1, maxTau + 1) # tau = 1..maxTau
+    #  - 'x' will be the array of tau_values
+    #  - 'y' will be E=1..maxE
+    #  - 'z' will be RhoMatrix(e, tau)
+    E_axis   = np.arange(1, maxE + 1)          # shape=(maxE,)
+    Tau_axis = np.array(tau_values)            # shape=(abs(maxTau),)
 
-    fig = go.Figure(data=[go.Surface(z=RhoMatrix, x=Tau_axis, y=E_axis)])
+    fig = go.Figure(data=[go.Surface(
+        z=RhoMatrix,       # 2D array shape=(maxE, abs(maxTau))
+        x=Tau_axis,        # 1D array of length=abs(maxTau)
+        y=E_axis           # 1D array of length=maxE
+    )])
     fig.update_layout(
         title='Interactive 3D Surface: Rho vs. E and tau',
         scene=dict(
@@ -92,14 +157,22 @@ def find_optimal_E_tau(df_sd, df_pre, maxE=5, maxTau=20):
     )
     fig.show()
 
-    # Find the best (E, tau) by looking for the maximum rho in the entire matrix
+    # Find the best (E, tau) by looking for the max in RhoMatrix
     best_index = np.unravel_index(np.argmax(RhoMatrix), RhoMatrix.shape)
-    best_E     = best_index[0] + 1  # +1 because index is zero-based
-    best_tau   = best_index[1] + 1
+    # best_index is a tuple (row_for_E, col_for_tau)
+    best_E_idx, best_tau_idx = best_index
+    best_E   = best_E_idx + 1  # because row=0 => E=1
+    # Convert the tau column index back to the actual tau
+    best_tau = tau_values[best_tau_idx]
 
     print(f"[INFO] Best E={best_E}, tau={best_tau} with rho={RhoMatrix[best_index]:.3f}")
 
     return best_E, best_tau, RhoMatrix
+
+
+
+
+
 
 
 
